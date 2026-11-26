@@ -1,0 +1,16 @@
+{
+  "_comment": "Copy this file to connectors.config.json and fill in what auto-detection cannot find. Every value is optional; a path is only used if it actually exists.",
+
+  "obsidianVault": "D:\\Notes\\MyVault",
+  "obsidianExe": "",
+  "python": "",
+  "matlab": "",
+  "comsol": "",
+  "comsolBatch": "",
+  "cubeMx": "",
+  "stm32ProgrammerCli": "",
+  "keil": "",
+  "vscode": "",
+  "notion": "",
+  "drawio": ""
+}

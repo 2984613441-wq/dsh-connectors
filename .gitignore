@@ -1,0 +1,20 @@
+# machine-specific, contains private paths
+connectors.config.json
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+
+# transient
+*.pdf
+*.docx
+*.xlsx
+*.pptx
+!docs/*.docx
+
+# editors / os
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
