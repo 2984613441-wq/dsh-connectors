@@ -28,6 +28,10 @@ jobs:
         shell: powershell
         run: ./self-test.ps1
 
+      - name: MCP protocol smoke test
+        shell: powershell
+        run: node mcp/smoke-test.mjs
+
       - name: Show what was detected
         shell: powershell
         if: always()

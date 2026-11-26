@@ -17,8 +17,23 @@ function Invoke-DshOfficeHelper {
     if (-not (Test-Path -LiteralPath $script:DshOfficeHelper)) {
         throw "helper not found: $script:DshOfficeHelper"
     }
-    $out  = & $DSH_PYTHON $script:DshOfficeHelper @Arguments 2>&1
-    $code = $LASTEXITCODE
+
+    # Force the child to speak UTF-8 on its pipes. Without this, Python on a
+    # non-English Windows encodes stdout with the ANSI code page (GBK, cp1251,
+    # ...) while this process decodes it as UTF-8, and every non-ASCII character
+    # comes back as mojibake. Python only defaults to UTF-8 for pipes from 3.15.
+    $prevIo = $env:PYTHONIOENCODING
+    $prevUtf8 = $env:PYTHONUTF8
+    $env:PYTHONIOENCODING = 'utf-8'
+    $env:PYTHONUTF8 = '1'
+    try {
+        $out = & $DSH_PYTHON $script:DshOfficeHelper @Arguments 2>&1
+        $code = $LASTEXITCODE
+    } finally {
+        $env:PYTHONIOENCODING = $prevIo
+        $env:PYTHONUTF8 = $prevUtf8
+    }
+
     [pscustomobject]@{
         ExitCode = $code
         Ok       = ($code -eq 0)
