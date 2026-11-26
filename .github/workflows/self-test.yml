@@ -1,0 +1,53 @@
+name: self-test
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: Windows / PowerShell 5.1
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Office libraries
+        run: python -m pip install --upgrade pip python-docx openpyxl python-pptx
+
+      - name: Run self test
+        shell: powershell
+        run: ./self-test.ps1
+
+      - name: Show what was detected
+        shell: powershell
+        if: always()
+        run: |
+          . ./_env.ps1
+          Get-DshConnectorStatus | Format-Table -AutoSize
+
+  python:
+    name: Python syntax
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Byte-compile the helper
+        run: python -m py_compile office_helper.py
+
+      - name: Helper CLI parses
+        run: python office_helper.py --help

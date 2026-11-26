@@ -1,5 +1,7 @@
 # dsh-connectors
 
+[![self-test](https://github.com/2984613441-wq/dsh-connectors/actions/workflows/self-test.yml/badge.svg)](https://github.com/2984613441-wq/dsh-connectors/actions/workflows/self-test.yml)
+
 **Let an AI agent actually operate the desktop software you already installed.**
 
 Plain PowerShell functions + one Python helper. No MCP server, no build step, no
@@ -25,22 +27,24 @@ already done here.
 
 ## What it connects
 
-| Applications | Mechanism | Verified |
+| Applications | Mechanism | Self-test |
 |---|---|---|
-| **Obsidian** | direct filesystem read/write of the vault | yes |
-| **MATLAB** | `matlab -batch` headless execution | yes |
-| **Word / Excel / PowerPoint** | python-docx, openpyxl, python-pptx | Word yes, Excel/PPT reader written but untested |
-| **PDF export** | pandoc + a LaTeX engine | tools detected, conversion untested |
-| **GitHub** | the `gh` CLI | yes (when logged in) |
-| **COMSOL** | `comsolbatch.exe` | command responds; no real model run |
-| **STM32** | `STM32_Programmer_CLI.exe` | version probe only |
-| **Keil uVision** | `UV4.exe` | file version read; no real build |
-| **VS Code** | `code` CLI | yes |
+| **Obsidian** | direct filesystem read/write of the vault | passes (skipped if no vault) |
+| **MATLAB** | `matlab -batch` headless execution | passes (skipped if absent) |
+| **Word** | python-docx | create + read back |
+| **Excel** | openpyxl | write + read back |
+| **PowerPoint** | python-pptx | write 2 slides + read outline |
+| **PDF export** | pandoc + xelatex | real conversion, asserts > 1 KB |
+| **GitHub** | the `gh` CLI | version + auth |
+| **COMSOL** | `comsolbatch.exe` | resolved and invocable |
+| **STM32** | `STM32_Programmer_CLI.exe` | version probe |
+| **Keil uVision** | `UV4.exe` | resolved |
+| **VS Code** | `code` CLI | resolved |
 | Notion / Feishu / Lark | requires an API token or app credentials | **not implemented** |
 | WeChat / QQ / Douyin / Bilibili | no official API | **out of scope** |
 
-"Verified" means the repo author ran it on a real machine and recorded the exit
-code and output. Anything unverified is labelled as such on purpose.
+Each row above is exercised by `self-test.ps1`. Anything that cannot be checked
+on a given machine is reported as `SKIP`, never as a pass.
 
 ## Requirements
 
@@ -97,8 +101,9 @@ open vault), falling back to the most recently used one.
    `-Force` is passed.
 3. **No credential reads.** No function reads `data.json`, `.credentials.yaml`,
    token files or cookies.
-4. **No residue.** The self test creates its fixture under a dot-prefixed folder
-   (ignored by Obsidian), verifies it, and deletes it.
+4. **No residue.** Every self-test fixture is created in `%TEMP%` (or a
+   dot-prefixed folder inside the vault, which Obsidian ignores) and deleted
+   afterwards.
 5. **Process-scoped execution policy only.** `use.ps1` sets the policy for the
    current process, never for `CurrentUser` or `LocalMachine`.
 
@@ -154,6 +159,15 @@ Copy-Item .\some.ps1 E:\probe.ps1
 Workaround used here: `Set-ExecutionPolicy -Scope Process Bypass`, which is not
 persistent and does not change the machine.
 
+### Bonus: the file extension is not cosmetic
+
+`openpyxl` refuses to open a workbook whose file name does not end in
+`.xlsx`/`.xlsm`/`.xltx`/`.xltm` — it raises `InvalidFileException` even when the
+bytes are a perfectly valid workbook. The self test originally generated
+fixtures with `GetRandomFileName()`, which embeds its own dot, producing
+`something.tmp-xlsx`; the read then failed while the write had succeeded. Names
+now come from a GUID plus the real extension.
+
 ## API
 
 ### Obsidian
@@ -185,10 +199,40 @@ Get-DshPowerPointOutline -Path .\deck.pptx
 Get-DshPdfViaPandoc      -InputPath .\doc.md [-OutputPath .\doc.pdf]
 ```
 
+Raw helper subcommands, if you prefer to call Python directly:
+
+```
+docx-read  <file> [--max-chars N]
+docx-write <file> --title T [--line TEXT ...]
+xlsx-read  <file> [--rows N]
+xlsx-write <file> [--sheet NAME] --row "a,b,c" ...
+pptx-read  <file>
+pptx-write <file> --slide "Title::body 1;body 2" ...
+```
+
 ### Diagnostics
 
 ```powershell
 Get-DshConnectorStatus   # one row per connector: resolved / path / exists
+```
+
+## Continuous integration
+
+`.github/workflows/self-test.yml` runs on every push and pull request:
+
+- **Windows runner** — installs the Office libraries, then runs `self-test.ps1`,
+  and always prints the detection table. Applications a runner does not have
+  (Obsidian, MATLAB, COMSOL, LaTeX) are reported as `SKIP`, not as failures.
+- **Linux runner** — byte-compiles `office_helper.py` and checks that its CLI
+  parses.
+
+The self test also honours `DSH_SELFTEST_STRICT=1`, which turns every `SKIP`
+into a failure. Use it on a machine that is supposed to have everything
+installed:
+
+```powershell
+$env:DSH_SELFTEST_STRICT = '1'
+powershell -NoProfile -ExecutionPolicy Bypass -File .\self-test.ps1
 ```
 
 ## Project layout
@@ -201,17 +245,19 @@ Get-DshConnectorStatus   # one row per connector: resolved / path / exists
 | `office.ps1` | Word/Excel/PowerPoint + pandoc-to-PDF |
 | `office_helper.py` | the Python backend for the Office functions |
 | `use.ps1` | single entry point (process-scoped execution policy) |
-| `self-test.ps1` | 16 checks; exit code = number of failures |
+| `self-test.ps1` | 20 checks on a fully equipped machine; exit code = failures |
 | `connectors.config.example.json` | optional overrides |
+| `.github/workflows/self-test.yml` | CI: Windows full run + Linux syntax check |
 
 ## Limitations
 
 - Windows only. Nothing here is conceptually Windows-specific except the
   registry lookup and the PowerShell idioms, but no other platform is tested.
-- Excel and PowerPoint readers are written but were never exercised against a
-  real workbook or deck.
-- MATLAB and COMSOL need a valid license; failures surface as a non-zero exit
+- MATLAB and COMSOL need a valid license; a failure surfaces as a non-zero exit
   code and the process output.
+- PDF export needs a LaTeX engine. MiKTeX may want to download packages on first
+  use, which the self test cannot do silently — if `pdf-convert` fails on a
+  fresh machine, run `xelatex` once by hand.
 - The GitHub integration is literally the `gh` CLI. Install it and run
   `gh auth login`.
 - Notion, Feishu/Lark and Tencent Meeting are **not** implemented. They need an

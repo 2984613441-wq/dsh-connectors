@@ -10,7 +10,12 @@ Subcommands
   docx-read   <file> [--max-chars N]
   docx-write  <file> --title T [--line TEXT ...]
   xlsx-read   <file> [--rows N]
+  xlsx-write  <file> [--sheet NAME] --row "a,b,c" ...
   pptx-read   <file>
+  pptx-write  <file> --slide "Title::body line 1;body line 2" ...
+
+Every command prints a machine-greppable line (FILE:, WROTE:, SLIDES:, ...)
+so the PowerShell self test can assert on it.
 """
 
 import argparse
@@ -24,6 +29,7 @@ def _fail(msg, code=2):
     return code
 
 
+# --------------------------------------------------------------- Word
 def cmd_docx_read(args):
     from docx import Document
 
@@ -60,6 +66,7 @@ def cmd_docx_write(args):
     return 0
 
 
+# -------------------------------------------------------------- Excel
 def cmd_xlsx_read(args):
     from openpyxl import load_workbook
 
@@ -80,6 +87,34 @@ def cmd_xlsx_read(args):
     return 0
 
 
+def cmd_xlsx_write(args):
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    ws = wb.active
+    if args.sheet:
+        ws.title = args.sheet
+    for spec in args.row or []:
+        cells = []
+        for token in spec.split(","):
+            token = token.strip()
+            # keep numbers numeric so the reader exercises type handling
+            try:
+                cells.append(int(token))
+            except ValueError:
+                try:
+                    cells.append(float(token))
+                except ValueError:
+                    cells.append(token)
+        ws.append(cells)
+    wb.save(args.path)
+    print("WROTE: " + args.path)
+    print("SHEET: " + ws.title)
+    print("ROWS: %d" % ws.max_row)
+    return 0
+
+
+# --------------------------------------------------------- PowerPoint
 def cmd_pptx_read(args):
     from pptx import Presentation
 
@@ -97,6 +132,31 @@ def cmd_pptx_read(args):
     return 0
 
 
+def cmd_pptx_write(args):
+    from pptx import Presentation
+
+    prs = Presentation()
+    layout = prs.slide_layouts[1]  # "Title and Content"
+    for spec in args.slide or []:
+        if "::" in spec:
+            title, body = spec.split("::", 1)
+        else:
+            title, body = spec, ""
+        slide = prs.slides.add_slide(layout)
+        slide.shapes.title.text = title.strip()
+        body_lines = [b.strip() for b in body.split(";") if b.strip()]
+        if body_lines:
+            frame = slide.placeholders[1].text_frame
+            frame.text = body_lines[0]
+            for extra in body_lines[1:]:
+                frame.add_paragraph().text = extra
+    prs.save(args.path)
+    print("WROTE: " + args.path)
+    print("SLIDES: %d" % len(prs.slides))
+    return 0
+
+
+# ---------------------------------------------------------------- CLI
 def build_parser():
     p = argparse.ArgumentParser(prog="office_helper.py")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -117,9 +177,20 @@ def build_parser():
     x.add_argument("--rows", type=int, default=10)
     x.set_defaults(func=cmd_xlsx_read)
 
+    xw = sub.add_parser("xlsx-write")
+    xw.add_argument("path")
+    xw.add_argument("--sheet", default="")
+    xw.add_argument("--row", action="append")
+    xw.set_defaults(func=cmd_xlsx_write)
+
     s = sub.add_parser("pptx-read")
     s.add_argument("path")
     s.set_defaults(func=cmd_pptx_read)
+
+    sw = sub.add_parser("pptx-write")
+    sw.add_argument("path")
+    sw.add_argument("--slide", action="append")
+    sw.set_defaults(func=cmd_pptx_write)
 
     return p
 
